@@ -78,6 +78,7 @@ func watch(ctx context.Context, clientset *kubernetes.Clientset, errCh chan erro
 				if pod.Status.ContainerStatuses[0].Ready == false {
 					if hasWaitingStatusProblem(pod.Status.ContainerStatuses[0].State.Waiting.Reason) &&
 						countList[pod.Status.ContainerStatuses[0].Name] <= 3 {
+						log.Printf("起動に失敗したpodを検知しました。POD名: %s, Reason: %s",pod.Name,pod.Status.ContainerStatuses[0].State.Waiting.Reason)
 						ck := msclient.SetConnectionKey("slack")
 						metadata := msclient.SetMetadata(map[string]interface{}{
 							"pod_name": pod.Name,
@@ -94,6 +95,7 @@ func watch(ctx context.Context, clientset *kubernetes.Clientset, errCh chan erro
 							errCh <- err
 							return
 						}
+						log.Printf("kanbanデータの送信に成功しました")
 						countList[pod.Status.ContainerStatuses[0].Name] += 1
 					}
 				}
