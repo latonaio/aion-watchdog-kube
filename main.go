@@ -75,28 +75,33 @@ func watch(ctx context.Context, clientset *kubernetes.Clientset, errCh chan erro
 			}
 
 			for _, pod := range pods.Items {
-				if pod.Status.ContainerStatuses[0].Ready == false {
-					if hasWaitingStatusProblem(pod.Status.ContainerStatuses[0].State.Waiting.Reason) &&
-						countList[pod.Status.ContainerStatuses[0].Name] <= 3 {
-						log.Printf("起動に失敗したpodを検知しました。POD名: %s, Reason: %s",pod.Name,pod.Status.ContainerStatuses[0].State.Waiting.Reason)
-						ck := msclient.SetConnectionKey("slack")
-						metadata := msclient.SetMetadata(map[string]interface{}{
-							"pod_name": pod.Name,
-							"status":   pod.Status.ContainerStatuses[0].State.Waiting.Reason,
-							"level":    "warning",
-						})
-						req, err := msclient.NewOutputData(ck, metadata)
-						if err != nil {
-							errCh <- err
-							return
+				log.Printf(" pod name: %+v",pod.Name)
+				log.Printf("%+v",pod.Status.ContainerStatuses[0].Name)
+				for _,status := range pod.Status.ContainerStatuses {
+					log.Printf("status %+v",status.Name)
+					if status.Ready == false {
+						if hasWaitingStatusProblem(status.State.Waiting.Reason) &&
+							countList[status.Name] <= 3 {
+							log.Printf("起動に失敗したpodを検知しました。POD名: %s, Reason: %s", pod.Name, pod.Status.ContainerStatuses[0].State.Waiting.Reason)
+							ck := msclient.SetConnectionKey("slack")
+							metadata := msclient.SetMetadata(map[string]interface{}{
+								"pod_name": pod.Name,
+								"status":   status.State.Waiting.Reason,
+								"level":    "warning",
+							})
+							req, err := msclient.NewOutputData(ck, metadata)
+							if err != nil {
+								errCh <- err
+								return
+							}
+							err = c.OutputKanban(req)
+							if err != nil {
+								errCh <- err
+								return
+							}
+							log.Printf("kanbanデータの送信に成功しました")
+							countList[status.Name] += 1
 						}
-						err = c.OutputKanban(req)
-						if err != nil {
-							errCh <- err
-							return
-						}
-						log.Printf("kanbanデータの送信に成功しました")
-						countList[pod.Status.ContainerStatuses[0].Name] += 1
 					}
 				}
 			}
