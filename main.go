@@ -5,6 +5,7 @@ import (
 	"context"
 	"k8s.io/client-go/rest"
 	"log"
+	"sync"
 	"syscall"
 	"time"
 
@@ -20,7 +21,11 @@ var whitelist = []string{
 	"PodInitializing",
 }
 
-var countList = map[string]int{}
+var countList = sync.Pool{
+	New: func() interface{}{
+		return map[string]int{}
+	},
+}
 
 func main() {
 	errCh := make(chan error, 1)
@@ -79,35 +84,39 @@ func watch(ctx context.Context, clientset *kubernetes.Clientset, errCh chan erro
 				errCh <- err
 				return
 			}
+			cl := countList.Get().(map[string]int)
 
 			for _, pod := range pods.Items {
 				for _,status := range pod.Status.ContainerStatuses {
 					if status.Ready == false {
-						if hasWaitingStatusProblem(status.State.Waiting.Reason) &&
-							countList[status.Name] <= cfg.MaxAlertNum-1 {
-							log.Printf("起動に失敗したpodを検知しました。POD名: %s, Reason: %s", pod.Name, status.State.Waiting.Reason)
-							ck := msclient.SetConnectionKey("slack")
-							metadata := msclient.SetMetadata(map[string]interface{}{
-								"pod_name": pod.Name,
-								"status":   status.State.Waiting.Reason,
-								"level":    "warning",
-							})
-							req, err := msclient.NewOutputData(ck, metadata)
-							if err != nil {
-								errCh <- err
-								return
+						if hasWaitingStatusProblem(status.State.Waiting.Reason){
+							cl[status.Name] += 1
+							if cl[status.Name] > 5 {
+								log.Printf("起動に失敗したpodを検知しました。POD名: %s, Reason: %s", pod.Name, status.State.Waiting.Reason)
+								ck := msclient.SetConnectionKey("slack")
+								metadata := msclient.SetMetadata(map[string]interface{}{
+									"pod_name": pod.Name,
+									"status":   status.State.Waiting.Reason,
+									"level":    "warning",
+								})
+								req, err := msclient.NewOutputData(ck, metadata)
+								if err != nil {
+									errCh <- err
+									return
+								}
+								err = c.OutputKanban(req)
+								if err != nil {
+									errCh <- err
+									return
+								}
+								log.Printf("kanbanデータの送信に成功しました")
+								cl[status.Name] = 0
 							}
-							err = c.OutputKanban(req)
-							if err != nil {
-								errCh <- err
-								return
-							}
-							log.Printf("kanbanデータの送信に成功しました")
-							countList[status.Name] += 1
 						}
 					}
 				}
 			}
+			countList.Put(cl)
 		}
 	}
 
