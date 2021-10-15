@@ -1,4 +1,4 @@
-FROM golang:1.15.2 as builder
+FROM golang:1.17.2 as builder
 
 ENV GO111MODULE on
 ENV GOPRIVATE "bitbucket.org/latonaio"
@@ -17,7 +17,7 @@ COPY . .
 RUN CGO_ENABLED=0 GOOS=linux go build -ldflags="-w -s" -a -installsuffix cgo -o aion-watchdog-kube .
 
 # Runtime Container
-FROM alpine:3.12
+FROM alpine:3.14
 
 RUN apk update \
  && apk add --no-cache \
